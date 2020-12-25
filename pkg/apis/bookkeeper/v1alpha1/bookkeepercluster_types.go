@@ -23,15 +23,15 @@ const (
 
 	// DefaultPravegaVersion is the default tag used for for the Pravega
 	// Docker image
-	DefaultBookkeeperVersion = "0.7.0"
+	DefaultBookkeeperVersion = "0.9.0-2684.01ecbde96"
 	// DefaultBookkeeperImageRepository is the default Docker repository for
 
 	// the BookKeeper image
-	DefaultBookkeeperImageRepository = "pravega/bookkeeper"
+	DefaultBookkeeperImageRepository = "devops-repo.isus.emc.com:8116/nautilus/bookkeeper"
 
 	// DefaultbookkeeperImagePullPolicy is the default image pull policy used
 	// for the Bookkeeper Docker image
-	DefaultBookkeeperImagePullPolicy = v1.PullAlways
+	DefaultBookkeeperImagePullPolicy = v1.PullIfNotPresent
 
 	// DefaultBookkeeperLedgerVolumeSize is the default volume size for the
 	// Bookkeeper ledger volume
