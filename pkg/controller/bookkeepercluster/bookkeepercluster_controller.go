@@ -237,6 +237,7 @@ func (r *ReconcileBookkeeperCluster) syncBookieSize(bk *bookkeeperv1alpha1.Bookk
 	if *sts.Spec.Replicas != bk.Spec.Replicas {
 		sts.Spec.Replicas = &(bk.Spec.Replicas)
 		err = r.client.Update(context.TODO(), sts)
+		log.Printf("update bk 239 %s", bk.Name)
 		if err != nil {
 			return fmt.Errorf("failed to update size of stateful-set (%s): %v", sts.Name, err)
 		}
@@ -272,6 +273,7 @@ func (r *ReconcileBookkeeperCluster) reconcileFinalizers(bk *bookkeeperv1alpha1.
 			if err = r.client.Update(context.TODO(), bk); err != nil {
 				return fmt.Errorf("failed to add the finalizer (%s): %v", bk.Name, err)
 			}
+			log.Printf("update bk 276 %s", bk.Name)
 		}
 	} else {
 		// checks whether the slice of finalizers contains a string with the given prefix
@@ -281,6 +283,7 @@ func (r *ReconcileBookkeeperCluster) reconcileFinalizers(bk *bookkeeperv1alpha1.
 			if err = r.client.Update(context.TODO(), bk); err != nil {
 				return fmt.Errorf("failed to update Bookkeeper object (%s): %v", bk.Name, err)
 			}
+			log.Printf("update bk 286 %s", bk.Name)
 			if err = r.cleanUpZookeeperMeta(bk, pravegaClusterName); err != nil {
 				// emit an event for zk metadata cleanup failure
 				message := fmt.Sprintf("failed to cleanup %s metadata from zookeeper (znode path: /pravega/%s): %v", bk.Name, pravegaClusterName, err)
@@ -420,6 +423,7 @@ func (r *ReconcileBookkeeperCluster) reconcileClusterStatus(bk *bookkeeperv1alph
 	bk.Status.Members.Unready = unreadyMembers
 
 	err = r.client.Status().Update(context.TODO(), bk)
+	log.Printf("update bk 425 %s", bk.Name)
 	if err != nil {
 		return fmt.Errorf("failed to update cluster status: %v", err)
 	}
