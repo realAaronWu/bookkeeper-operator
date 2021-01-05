@@ -105,25 +105,25 @@ func (r *ReconcileBookkeeperCluster) Reconcile(request reconcile.Request) (recon
 		log.Printf("bookkeeperCluster Repository: %s", bookkeeperCluster.Spec.Image.Repository)
 	}
 	// Set default configuration for unspecified values
-	changed := bookkeeperCluster.WithDefaults()
+	bookkeeperCluster.WithDefaults()
 	if bookkeeperCluster.Spec.Image != nil {
 		log.Printf("changed bookkeeperCluster Repository: %s", bookkeeperCluster.Spec.Image.ImageSpec.Repository)
 		log.Printf("changed bookkeeperCluster Repository: %s", bookkeeperCluster.Spec.Image.Repository)
 	}
-	if changed {
-		log.Printf("Setting default settings for bookkeeper-cluster: %s", request.Name)
-		if err = r.client.Update(context.TODO(), bookkeeperCluster); err != nil {
-			return reconcile.Result{}, err
-		}
-		return reconcile.Result{Requeue: true}, nil
-	}
+	//if changed {
+	//	log.Printf("Setting default settings for bookkeeper-cluster: %s", request.Name)
+	//	if err = r.client.Update(context.TODO(), bookkeeperCluster); err != nil {
+	//		return reconcile.Result{}, err
+	//	}
+	//	return reconcile.Result{Requeue: true}, nil
+	//}
 
 	err = r.run(bookkeeperCluster)
 	if err != nil {
 		log.Printf("failed to reconcile bookkeeper cluster (%s): %v", bookkeeperCluster.Name, err)
 		return reconcile.Result{}, err
 	}
-
+	log.Printf("reconcile bookkeeper cluster(%s)", bookkeeperCluster.Name)
 	return reconcile.Result{RequeueAfter: ReconcileTime}, nil
 }
 
