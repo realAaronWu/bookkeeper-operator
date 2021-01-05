@@ -104,6 +104,10 @@ func (r *ReconcileBookkeeperCluster) Reconcile(request reconcile.Request) (recon
 		log.Printf("bookkeeperCluster Repository: %s", bookkeeperCluster.Spec.Image.ImageSpec.Repository)
 		log.Printf("bookkeeperCluster Repository: %s", bookkeeperCluster.Spec.Image.Repository)
 	}
+
+	log.Printf("bookkeeperCluster ZookeeperUri: %s", bookkeeperCluster.Spec.ZookeeperUri)
+	log.Printf("bookkeeperCluster EnvVars: %s", bookkeeperCluster.Spec.EnvVars)
+
 	// Set default configuration for unspecified values
 	bookkeeperCluster.WithDefaults()
 	if bookkeeperCluster.Spec.Image != nil {
