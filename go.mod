@@ -94,6 +94,6 @@ require (
 	k8s.io/klog v0.1.0
 	k8s.io/kube-openapi v0.0.0-20181114233023-0317810137be
 	k8s.io/kubernetes v1.14.3
-	sigs.k8s.io/controller-runtime v0.4.0
+	sigs.k8s.io/controller-runtime v0.1.8
 	sigs.k8s.io/testing_frameworks v0.1.2 // indirect
 )
