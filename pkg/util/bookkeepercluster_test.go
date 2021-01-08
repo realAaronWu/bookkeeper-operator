@@ -14,7 +14,6 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/pravega/bookkeeper-operator/pkg/apis/bookkeeper/v1alpha1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -62,27 +61,6 @@ var _ = Describe("bookkeepercluster", func() {
 		})
 		It("should return headless service name", func() {
 			Ω(str1).To(Equal("bk-bookie-headless"))
-		})
-	})
-	Context("LabelsForBookie", func() {
-		var str1 map[string]string
-		var bk *v1alpha1.BookkeeperCluster
-		BeforeEach(func() {
-			bk = &v1alpha1.BookkeeperCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "default",
-				},
-			}
-			str1 = LabelsForBookie(bk)
-		})
-		It("should return label for app", func() {
-			Ω(str1["app"]).To(Equal("bookkeeper-cluster"))
-		})
-		It("should return label for cluster name", func() {
-			Ω(str1["bookkeeper_cluster"]).To(Equal("default"))
-		})
-		It("should return label for component", func() {
-			Ω(str1["component"]).To(Equal("bookie"))
 		})
 	})
 	Context("IsOrphan", func() {
@@ -181,66 +159,7 @@ var _ = Describe("bookkeepercluster", func() {
 			Ω(out1).To(Equal(""))
 		})
 	})
-	Context("GetClusterExpectedSize", func() {
-		var replicas int
-		var bk *v1alpha1.BookkeeperCluster
-		BeforeEach(func() {
-			bk = &v1alpha1.BookkeeperCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "default",
-				},
-			}
-			bk.WithDefaults()
-			replicas = GetClusterExpectedSize(bk)
-		})
 
-		It("should return correct replica count", func() {
-			Ω(replicas).To(Equal(3))
-		})
-	})
-	Context("BookkeeperImage", func() {
-		var image string
-		var bk *v1alpha1.BookkeeperCluster
-		BeforeEach(func() {
-			bk = &v1alpha1.BookkeeperCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "default",
-				},
-				Spec: v1alpha1.BookkeeperClusterSpec{
-					Version: "0.6.1",
-				},
-			}
-			bk.WithDefaults()
-			image = BookkeeperImage(bk)
-		})
-
-		It("should return correct image", func() {
-			Ω(image).To(Equal("pravega/bookkeeper:0.6.1"))
-
-		})
-	})
-	Context("BookkeeperTargetImage", func() {
-		var image, image1 string
-		var bk *v1alpha1.BookkeeperCluster
-		BeforeEach(func() {
-			bk = &v1alpha1.BookkeeperCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "default",
-				},
-			}
-			bk.WithDefaults()
-			image, _ = BookkeeperTargetImage(bk)
-			bk.Status.Init()
-			bk.Status.TargetVersion = "0.6.1"
-			image1, _ = BookkeeperTargetImage(bk)
-		})
-		It("should return empty", func() {
-			Ω(image).To(Equal(""))
-		})
-		It("should return correct image", func() {
-			Ω(image1).To(Equal("pravega/bookkeeper:0.6.1"))
-		})
-	})
 	Context("ContainsVersion fn", func() {
 		var result1, result2, result3 bool
 		BeforeEach(func() {
@@ -260,7 +179,6 @@ var _ = Describe("bookkeepercluster", func() {
 			Ω(result3).To(Equal(false))
 		})
 	})
-
 	Context("GetPodVersion", func() {
 		var out string
 		BeforeEach(func() {
@@ -302,6 +220,47 @@ var _ = Describe("bookkeepercluster", func() {
 			Ω(len(result)).ShouldNot(Equal(0))
 			Ω(result[0]).To(Equal("-Xms1024m"))
 			Ω(result1[0]).To(Equal("-Xms512m"))
+		})
+	})
+	Context("CompareConfigMap", func() {
+		var output1, output2 bool
+		BeforeEach(func() {
+			configData1 := map[string]string{
+				"TEST_DATA": "testdata",
+			}
+			configData2 := map[string]string{
+				"TEST_DATA": "testdata1",
+			}
+			configMap1 := &v1.ConfigMap{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "ConfigMap",
+					APIVersion: "v1",
+				},
+				Data: configData1,
+			}
+			configMap2 := &v1.ConfigMap{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "ConfigMap",
+					APIVersion: "v1",
+				},
+				Data: configData1,
+			}
+			configMap3 := &v1.ConfigMap{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "ConfigMap",
+					APIVersion: "v1",
+				},
+				Data: configData2,
+			}
+			output1 = CompareConfigMap(configMap1, configMap2)
+			output2 = CompareConfigMap(configMap1, configMap3)
+		})
+
+		It("output1 should be true", func() {
+			Ω(output1).To(Equal(true))
+		})
+		It("output2 should be false", func() {
+			Ω(output2).To(Equal(false))
 		})
 	})
 })

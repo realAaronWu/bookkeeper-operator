@@ -13,6 +13,7 @@ package bookkeepercluster
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	bookkeeperv1alpha1 "github.com/pravega/bookkeeper-operator/pkg/apis/bookkeeper/v1alpha1"
@@ -73,7 +74,7 @@ func (r *ReconcileBookkeeperCluster) syncClusterVersion(bk *bookkeeperv1alpha1.B
 			bk.Status.SetErrorConditionTrue("UpgradeFailed", err.Error())
 			// emit an event for Upgrade Failure
 			message := fmt.Sprintf("Error Upgrading from version %v to %v. %v", bk.Status.CurrentVersion, bk.Status.TargetVersion, err.Error())
-			event := util.NewEvent("UPGRADE_ERROR", bk, bookkeeperv1alpha1.UpgradeErrorReason, message, "Error")
+			event := bk.NewEvent("UPGRADE_ERROR", bookkeeperv1alpha1.UpgradeErrorReason, message, "Error")
 			pubErr := r.client.Create(context.TODO(), event)
 			if pubErr != nil {
 				log.Printf("Error publishing Upgrade Failure event to k8s. %v", pubErr)
@@ -160,7 +161,7 @@ func (r *ReconcileBookkeeperCluster) rollbackClusterVersion(bk *bookkeeperv1alph
 		bk.Status.SetErrorConditionTrue("RollbackFailed", err.Error())
 		// emit an event for Rollback Failure
 		message := fmt.Sprintf("Error Rollingback from version %v to %v. %v", bk.Status.CurrentVersion, bk.Status.TargetVersion, err.Error())
-		event := util.NewEvent("ROLLBACK_ERROR", bk, bookkeeperv1alpha1.RollbackErrorReason, message, "Error")
+		event := bk.NewEvent("ROLLBACK_ERROR", bookkeeperv1alpha1.RollbackErrorReason, message, "Error")
 		pubErr := r.client.Create(context.TODO(), event)
 		if pubErr != nil {
 			log.Printf("Error publishing ROLLBACK_ERROR event to k8s. %v", pubErr)
@@ -207,7 +208,7 @@ func (r *ReconcileBookkeeperCluster) syncBookkeeperVersion(bk *bookkeeperv1alpha
 		return false, fmt.Errorf("failed to get statefulset (%s): %v", sts.Name, err)
 	}
 
-	targetImage, err := util.BookkeeperTargetImage(bk)
+	targetImage, err := bk.BookkeeperTargetImage()
 	if err != nil {
 		return false, err
 	}
@@ -311,10 +312,14 @@ func (r *ReconcileBookkeeperCluster) getOneOutdatedPod(sts *appsv1.StatefulSet, 
 		Namespace:     sts.Namespace,
 		LabelSelector: selector,
 	}
-	err = r.client.List(context.TODO(), podlistOps, podList)
+	err = r.client.List(context.TODO(), podList, podlistOps)
 	if err != nil {
 		return nil, err
 	}
+
+	sort.SliceStable(podList.Items, func(i int, j int) bool {
+		return podList.Items[i].Name < podList.Items[j].Name
+	})
 
 	for _, podItem := range podList.Items {
 		if util.GetPodVersion(&podItem) == version {
@@ -342,7 +347,7 @@ func (r *ReconcileBookkeeperCluster) getPodsWithVersion(selector labels.Selector
 		Namespace:     namespace,
 		LabelSelector: selector,
 	}
-	err := r.client.List(context.TODO(), podlistOps, podList)
+	err := r.client.List(context.TODO(), podList, podlistOps)
 	if err != nil {
 		return nil, err
 	}

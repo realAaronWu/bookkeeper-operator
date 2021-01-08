@@ -13,6 +13,7 @@ package bookkeepercluster
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -138,6 +139,21 @@ func (r *ReconcileBookkeeperCluster) run(p *bookkeeperv1alpha1.BookkeeperCluster
 		return fmt.Errorf("failed to clean up zookeeper: %v", err)
 	}
 
+	err = r.reconcileConfigMap(p)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile configMap %v", err)
+	}
+
+	err = r.reconcilePdb(p)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile pdb %v", err)
+	}
+
+	err = r.reconcileService(p)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile service %v", err)
+	}
+
 	err = r.deployCluster(p)
 	if err != nil {
 		return fmt.Errorf("failed to deploy cluster: %v", err)
@@ -177,27 +193,6 @@ func (r *ReconcileBookkeeperCluster) deployCluster(p *bookkeeperv1alpha1.Bookkee
 }
 
 func (r *ReconcileBookkeeperCluster) deployBookie(p *bookkeeperv1alpha1.BookkeeperCluster) (err error) {
-
-	headlessService := MakeBookieHeadlessService(p)
-	controllerutil.SetControllerReference(p, headlessService, r.scheme)
-	err = r.client.Create(context.TODO(), headlessService)
-	if err != nil && !errors.IsAlreadyExists(err) {
-		return err
-	}
-
-	pdb := MakeBookiePodDisruptionBudget(p)
-	controllerutil.SetControllerReference(p, pdb, r.scheme)
-	err = r.client.Create(context.TODO(), pdb)
-	if err != nil && !errors.IsAlreadyExists(err) {
-		return err
-	}
-
-	configMap := MakeBookieConfigMap(p)
-	controllerutil.SetControllerReference(p, configMap, r.scheme)
-	err = r.client.Create(context.TODO(), configMap)
-	if err != nil && !errors.IsAlreadyExists(err) {
-		return err
-	}
 
 	statefulSet := MakeBookieStatefulSet(p)
 	controllerutil.SetControllerReference(p, statefulSet, r.scheme)
@@ -287,7 +282,7 @@ func (r *ReconcileBookkeeperCluster) reconcileFinalizers(bk *bookkeeperv1alpha1.
 			if err = r.cleanUpZookeeperMeta(bk, pravegaClusterName); err != nil {
 				// emit an event for zk metadata cleanup failure
 				message := fmt.Sprintf("failed to cleanup %s metadata from zookeeper (znode path: /pravega/%s): %v", bk.Name, pravegaClusterName, err)
-				event := util.NewApplicationEvent("ZKMETA_CLEANUP_ERROR", bk, "ZK Metadata Cleanup Failed", message, "Error")
+				event := bk.NewApplicationEvent("ZKMETA_CLEANUP_ERROR", "ZK Metadata Cleanup Failed", message, "Error")
 				pubErr := r.client.Create(context.TODO(), event)
 				if pubErr != nil {
 					log.Printf("Error publishing zk metadata cleanup failure event to k8s. %v", pubErr)
@@ -300,11 +295,11 @@ func (r *ReconcileBookkeeperCluster) reconcileFinalizers(bk *bookkeeperv1alpha1.
 }
 
 func (r *ReconcileBookkeeperCluster) cleanUpZookeeperMeta(bk *bookkeeperv1alpha1.BookkeeperCluster, pravegaClusterName string) (err error) {
-	if err = util.WaitForClusterToTerminate(r.client, bk); err != nil {
+	if err = bk.WaitForClusterToTerminate(r.client); err != nil {
 		return fmt.Errorf("failed to wait for cluster pods termination (%s): %v", bk.Name, err)
 	}
 
-	if err = util.DeleteAllZnodes(bk, pravegaClusterName); err != nil {
+	if err = util.DeleteAllZnodes(bk.Spec.ZookeeperUri, bk.Namespace, pravegaClusterName); err != nil {
 		return fmt.Errorf("failed to delete zookeeper znodes for (%s): %v", bk.Name, err)
 	}
 	return nil
@@ -323,7 +318,7 @@ func (r *ReconcileBookkeeperCluster) syncStatefulSetPvc(sts *appsv1.StatefulSet)
 		Namespace:     sts.Namespace,
 		LabelSelector: selector,
 	}
-	err = r.client.List(context.TODO(), pvclistOps, pvcList)
+	err = r.client.List(context.TODO(), pvcList, pvclistOps)
 	if err != nil {
 		return err
 	}
@@ -345,6 +340,109 @@ func (r *ReconcileBookkeeperCluster) syncStatefulSetPvc(sts *appsv1.StatefulSet)
 	}
 	return nil
 }
+func (r *ReconcileBookkeeperCluster) reconcileConfigMap(bk *bookkeeperv1alpha1.BookkeeperCluster) (err error) {
+
+	currentConfigMap := &corev1.ConfigMap{}
+	configMap := MakeBookieConfigMap(bk)
+	controllerutil.SetControllerReference(bk, configMap, r.scheme)
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: util.ConfigMapNameForBookie(bk.Name), Namespace: bk.Namespace}, currentConfigMap)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			err = r.client.Create(context.TODO(), configMap)
+			if err != nil && !errors.IsAlreadyExists(err) {
+				return err
+			}
+		}
+	} else {
+
+		currentConfigMap := &corev1.ConfigMap{}
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: util.ConfigMapNameForBookie(bk.Name), Namespace: bk.Namespace}, currentConfigMap)
+		eq := util.CompareConfigMap(currentConfigMap, configMap)
+		if !eq {
+			err := r.client.Update(context.TODO(), configMap)
+			if err != nil {
+				return err
+			}
+			//restarting sts pods
+			err = r.restartStsPod(bk)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+func (r *ReconcileBookkeeperCluster) reconcilePdb(bk *bookkeeperv1alpha1.BookkeeperCluster) (err error) {
+	pdb := MakeBookiePodDisruptionBudget(bk)
+	controllerutil.SetControllerReference(bk, pdb, r.scheme)
+	err = r.client.Create(context.TODO(), pdb)
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return err
+	}
+	return nil
+}
+
+func (r *ReconcileBookkeeperCluster) reconcileService(bk *bookkeeperv1alpha1.BookkeeperCluster) error {
+	headlessService := MakeBookieHeadlessService(bk)
+	controllerutil.SetControllerReference(bk, headlessService, r.scheme)
+	err := r.client.Create(context.TODO(), headlessService)
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return err
+	}
+	return nil
+}
+
+func (r *ReconcileBookkeeperCluster) restartStsPod(bk *bookkeeperv1alpha1.BookkeeperCluster) error {
+
+	currentSts := &appsv1.StatefulSet{}
+	err := r.client.Get(context.TODO(), types.NamespacedName{Name: util.StatefulSetNameForBookie(bk.Name), Namespace: bk.Namespace}, currentSts)
+	if err != nil {
+		return err
+	}
+	selector, err := metav1.LabelSelectorAsSelector(&metav1.LabelSelector{
+		MatchLabels: currentSts.Spec.Template.Labels,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to convert label selector: %v", err)
+	}
+	podList := &corev1.PodList{}
+	podlistOps := &client.ListOptions{
+		Namespace:     currentSts.Namespace,
+		LabelSelector: selector,
+	}
+	err = r.client.List(context.TODO(), podList, podlistOps)
+	if err != nil {
+		return err
+	}
+	sort.SliceStable(podList.Items, func(i int, j int) bool {
+		return podList.Items[i].Name < podList.Items[j].Name
+	})
+	for _, podItem := range podList.Items {
+		err := r.client.Delete(context.TODO(), &podItem)
+		if err != nil {
+			return err
+		} else {
+			start := time.Now()
+			pod := &corev1.Pod{}
+			err = r.client.Get(context.TODO(), types.NamespacedName{Name: podItem.ObjectMeta.Name, Namespace: podItem.ObjectMeta.Namespace}, pod)
+			for util.IsPodReady(pod) {
+				if time.Since(start) > 10*time.Minute {
+					return fmt.Errorf("failed to delete Bookkeeper pod (%s) for 10 mins ", podItem.ObjectMeta.Name)
+				}
+				err = r.client.Get(context.TODO(), types.NamespacedName{Name: podItem.ObjectMeta.Name, Namespace: podItem.ObjectMeta.Namespace}, pod)
+			}
+			start = time.Now()
+			err = r.client.Get(context.TODO(), types.NamespacedName{Name: podItem.ObjectMeta.Name, Namespace: podItem.ObjectMeta.Namespace}, pod)
+			for !util.IsPodReady(pod) {
+				if time.Since(start) > 10*time.Minute {
+					return fmt.Errorf("failed to get Bookkeeper pod (%s) as ready for 10 mins ", podItem.ObjectMeta.Name)
+				}
+				err = r.client.Get(context.TODO(), types.NamespacedName{Name: podItem.ObjectMeta.Name, Namespace: podItem.ObjectMeta.Namespace}, pod)
+			}
+		}
+	}
+	return nil
+}
 
 func (r *ReconcileBookkeeperCluster) syncStatefulSetExternalServices(sts *appsv1.StatefulSet) error {
 	selector, err := metav1.LabelSelectorAsSelector(&metav1.LabelSelector{
@@ -359,12 +457,12 @@ func (r *ReconcileBookkeeperCluster) syncStatefulSetExternalServices(sts *appsv1
 		Namespace:     sts.Namespace,
 		LabelSelector: selector,
 	}
-	err = r.client.List(context.TODO(), servicelistOps, serviceList)
+	err = r.client.List(context.TODO(), serviceList, servicelistOps)
 	if err != nil {
 		return err
 	}
-
 	for _, svcItem := range serviceList.Items {
+
 		if util.IsOrphan(svcItem.Name, *sts.Spec.Replicas) {
 			svcDelete := &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{
@@ -386,13 +484,13 @@ func (r *ReconcileBookkeeperCluster) reconcileClusterStatus(bk *bookkeeperv1alph
 
 	bk.Status.Init()
 
-	expectedSize := util.GetClusterExpectedSize(bk)
+	expectedSize := bk.GetClusterExpectedSize()
 	listOps := &client.ListOptions{
 		Namespace:     bk.Namespace,
-		LabelSelector: labels.SelectorFromSet(util.LabelsForBookkeeperCluster(bk)),
+		LabelSelector: labels.SelectorFromSet(bk.LabelsForBookkeeperCluster()),
 	}
 	podList := &corev1.PodList{}
-	err := r.client.List(context.TODO(), listOps, podList)
+	err := r.client.List(context.TODO(), podList, listOps)
 	if err != nil {
 		return err
 	}
