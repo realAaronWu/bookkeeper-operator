@@ -110,18 +110,19 @@ func (r *ReconcileBookkeeperCluster) Reconcile(request reconcile.Request) (recon
 	log.Printf("bookkeeperCluster EnvVars: %s", bookkeeperCluster.Spec.EnvVars)
 
 	// Set default configuration for unspecified values
-	bookkeeperCluster.WithDefaults()
+	changed := bookkeeperCluster.WithDefaults()
 	if bookkeeperCluster.Spec.Image != nil {
 		log.Printf("changed bookkeeperCluster Repository: %s", bookkeeperCluster.Spec.Image.ImageSpec.Repository)
 		log.Printf("changed bookkeeperCluster Repository: %s", bookkeeperCluster.Spec.Image.Repository)
 	}
-	//if changed {
-	//	log.Printf("Setting default settings for bookkeeper-cluster: %s", request.Name)
-	//	if err = r.client.Update(context.TODO(), bookkeeperCluster); err != nil {
-	//		return reconcile.Result{}, err
-	//	}
-	//	return reconcile.Result{Requeue: true}, nil
-	//}
+	if changed {
+		log.Printf("Setting default settings for bookkeeper-cluster: %s", request.Name)
+		if err = r.client.Update(context.TODO(), bookkeeperCluster); err != nil {
+			log.Printf("failed to update bookkeeper cluster (%s): %v", bookkeeperCluster.Name, err)
+			return reconcile.Result{}, err
+		}
+		return reconcile.Result{Requeue: true}, nil
+	}
 
 	err = r.run(bookkeeperCluster)
 	if err != nil {
