@@ -171,7 +171,7 @@ func makeBookiePodSpec(bk *v1alpha1.BookkeeperCluster) *corev1.PodSpec {
 
 	var volumes []corev1.Volume
 	var cmVolumeMounts []corev1.VolumeMount
-
+	var mode int32 = 0777
 	if len(configMapVolumeMounts) > 0 {
 		for _, vm := range configMapVolumeMounts {
 			p := strings.Split(vm, "=")
@@ -183,6 +183,7 @@ func makeBookiePodSpec(bk *v1alpha1.BookkeeperCluster) *corev1.PodSpec {
 						LocalObjectReference: corev1.LocalObjectReference{
 							Name: s[0],
 						},
+						DefaultMode: &mode,
 					},
 				},
 			}
